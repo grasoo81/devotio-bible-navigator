@@ -1,32 +1,80 @@
 .devotio-bible-navigator {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  gap: 6px;
   margin: 0.5em 0;
-  padding: 0.5em;
+  padding: 0.6em;
   border: 1px solid var(--background-modifier-border);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--background-secondary);
 }
 
-.devotio-bible-select {
-  padding: 4px 8px;
-  border-radius: 6px;
-  border: 1px solid var(--background-modifier-border);
-  background: var(--background-primary);
-  color: var(--text-normal);
-  min-width: 120px;
+.devotio-bible-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
 }
 
-.devotio-bible-select:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.devotio-bible-row.is-hidden {
+  display: none;
+}
+
+.devotio-bible-group-label {
+  font-size: 0.75em;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-right: 2px;
+  flex-basis: 100%;
+}
+
+.devotio-bible-group-label:first-child {
+  margin-top: 0;
+}
+
+.devotio-bible-btn {
+  appearance: none;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 999px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 0.8em;
+  line-height: 1;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: background-color 0.1s ease, color 0.1s ease, border-color 0.1s ease,
+    transform 0.05s ease;
+}
+
+.devotio-bible-btn:hover {
+  background: var(--background-modifier-hover);
+  border-color: var(--interactive-accent);
+}
+
+.devotio-bible-btn:active {
+  transform: scale(0.96);
+}
+
+.devotio-bible-btn.is-selected {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+  font-weight: 600;
+}
+
+.devotio-bible-btn-book {
+  min-width: 2.2em;
+}
+
+.devotio-bible-btn-chapter,
+.devotio-bible-btn-verse {
+  min-width: 1.8em;
+  padding: 3px 8px;
+  font-size: 0.78em;
 }
 
 .devotio-bible-status {
-  flex-basis: 100%;
-  font-size: 0.85em;
+  font-size: 0.82em;
   color: var(--text-muted);
 }
 

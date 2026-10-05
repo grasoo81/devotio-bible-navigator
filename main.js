@@ -134,97 +134,104 @@ module.exports = class DevotioBibleNavigatorPlugin extends Plugin {
     statusEl.setText(file.basename + ' · ' + verseNum + '절로 이동했습니다.');
   }
 
+  // 버튼 하나를 만들고 클릭하면 같은 줄의 다른 버튼들의 선택 표시를 지운 뒤
+  // 이 버튼에만 선택 표시를 합니다 (라디오 버튼처럼 동작).
+  createChoiceButton(rowEl, cls, label, title, onClick) {
+    const btn = rowEl.createEl('button', { cls: 'devotio-bible-btn ' + cls, text: label });
+    if (title) btn.setAttr('title', title);
+    btn.addEventListener('click', () => {
+      rowEl.querySelectorAll('button').forEach((el) => el.removeClass('is-selected'));
+      btn.addClass('is-selected');
+      onClick(btn);
+    });
+    return btn;
+  }
+
   renderNavigator(containerEl) {
     containerEl.empty();
     containerEl.addClass('devotio-bible-navigator');
 
+    const state = { book: null };
+
+    const bookRow = containerEl.createDiv({ cls: 'devotio-bible-row' });
+    const chapterRow = containerEl.createDiv({ cls: 'devotio-bible-row is-hidden' });
+    const verseRow = containerEl.createDiv({ cls: 'devotio-bible-row is-hidden' });
+    const statusEl = containerEl.createDiv({ cls: 'devotio-bible-status' });
+
     const books = this.getBookIndex();
-
-    const bookSelect = containerEl.createEl('select', { cls: 'devotio-bible-select' });
-    bookSelect.createEl('option', { text: '성경 선택', value: '' });
-
     let lastTestament = null;
-    let group = null;
     for (const b of books) {
       if (b.testament !== lastTestament) {
-        group = bookSelect.createEl('optgroup');
-        group.setAttr('label', b.testament);
+        bookRow.createSpan({ cls: 'devotio-bible-group-label', text: b.testament });
         lastTestament = b.testament;
       }
-      const opt = (group || bookSelect).createEl('option', { text: b.book, value: b.path });
-      opt.setAttr('data-abbr', b.book_abbr || '');
+      this.createChoiceButton(
+        bookRow,
+        'devotio-bible-btn-book',
+        b.book_abbr || b.book,
+        b.book,
+        () => this.showChapters(b, chapterRow, verseRow, statusEl, state)
+      );
+    }
+  }
+
+  showChapters(book, chapterRow, verseRow, statusEl, state) {
+    state.book = book;
+    chapterRow.empty();
+    chapterRow.removeClass('is-hidden');
+    verseRow.empty();
+    verseRow.addClass('is-hidden');
+    statusEl.setText('');
+
+    const bookFile = this.app.vault.getAbstractFileByPath(book.path);
+    const chapters = this.getChapterIndex(bookFile.parent, book.book_abbr);
+
+    if (chapters.length === 0) {
+      statusEl.setText('이 책에는 장(편) 노트가 아직 없습니다.');
+      return;
     }
 
-    const chapterSelect = containerEl.createEl('select', { cls: 'devotio-bible-select' });
-    chapterSelect.disabled = true;
-    chapterSelect.createEl('option', { text: '장 선택', value: '' });
+    for (const c of chapters) {
+      this.createChoiceButton(
+        chapterRow,
+        'devotio-bible-btn-chapter',
+        String(c.num),
+        c.num + c.unit,
+        () => this.showVerses(book, c, verseRow, statusEl)
+      );
+    }
+  }
 
-    const verseSelect = containerEl.createEl('select', { cls: 'devotio-bible-select' });
-    verseSelect.disabled = true;
-    verseSelect.createEl('option', { text: '절 선택', value: '' });
+  // 장(편)을 누르면 절 버튼들을 보여주면서, 동시에 그 장의 첫 절로 바로 이동합니다
+  // ("3장을 펴면 3장 1절로 이동").
+  async showVerses(book, chapter, verseRow, statusEl) {
+    verseRow.empty();
+    verseRow.removeClass('is-hidden');
+    statusEl.setText('');
 
-    const statusEl = containerEl.createEl('div', { cls: 'devotio-bible-status' });
+    const chapterFile = this.app.vault.getAbstractFileByPath(chapter.path);
+    const content = await this.app.vault.cachedRead(chapterFile);
+    const verses = this.extractVerseNumbers(content, book.book_abbr, chapter.num);
 
-    bookSelect.addEventListener('change', () => {
-      chapterSelect.empty();
-      chapterSelect.createEl('option', { text: '장 선택', value: '' });
-      verseSelect.empty();
-      verseSelect.createEl('option', { text: '절 선택', value: '' });
-      verseSelect.disabled = true;
-      statusEl.setText('');
+    if (verses.length === 0) {
+      statusEl.setText('이 장(편)에는 절 링크를 찾지 못했습니다.');
+      return;
+    }
 
-      const bookPath = bookSelect.value;
-      if (!bookPath) {
-        chapterSelect.disabled = true;
-        return;
-      }
+    let firstBtn = null;
+    for (const v of verses) {
+      const btn = this.createChoiceButton(
+        verseRow,
+        'devotio-bible-btn-verse',
+        String(v),
+        v + '절',
+        () => this.goToVerse(chapter.path, book.book_abbr, chapter.num, v, statusEl)
+      );
+      if (v === verses[0]) firstBtn = btn;
+    }
 
-      const bookFile = this.app.vault.getAbstractFileByPath(bookPath);
-      const fm = this.app.metadataCache.getFileCache(bookFile)?.frontmatter;
-      const abbr = fm?.book_abbr;
-      const chapters = this.getChapterIndex(bookFile.parent, abbr);
-
-      for (const c of chapters) {
-        chapterSelect.createEl('option', {
-          text: c.num + c.unit,
-          value: JSON.stringify({ path: c.path, num: c.num, unit: c.unit, abbr }),
-        });
-      }
-      chapterSelect.disabled = chapters.length === 0;
-      if (chapters.length === 0) {
-        statusEl.setText('이 책에는 장(편) 노트가 아직 없습니다.');
-      }
-    });
-
-    chapterSelect.addEventListener('change', async () => {
-      verseSelect.empty();
-      verseSelect.createEl('option', { text: '절 선택', value: '' });
-      statusEl.setText('');
-
-      if (!chapterSelect.value) {
-        verseSelect.disabled = true;
-        return;
-      }
-
-      const { path, num, abbr } = JSON.parse(chapterSelect.value);
-      const chapterFile = this.app.vault.getAbstractFileByPath(path);
-      const content = await this.app.vault.cachedRead(chapterFile);
-      const verses = this.extractVerseNumbers(content, abbr, num);
-
-      for (const v of verses) {
-        verseSelect.createEl('option', { text: v + '절', value: String(v) });
-      }
-      verseSelect.disabled = verses.length === 0;
-      if (verses.length === 0) {
-        statusEl.setText('이 장(편)에는 절 링크를 찾지 못했습니다.');
-      }
-    });
-
-    verseSelect.addEventListener('change', async () => {
-      if (!verseSelect.value || !chapterSelect.value) return;
-      const { path, num, abbr } = JSON.parse(chapterSelect.value);
-      const verseNum = Number(verseSelect.value);
-      await this.goToVerse(path, abbr, num, verseNum, statusEl);
-    });
+    // 장을 막 열었을 때는 첫 절로 바로 이동하고, 그 버튼에 선택 표시를 해 둡니다.
+    if (firstBtn) firstBtn.addClass('is-selected');
+    await this.goToVerse(chapter.path, book.book_abbr, chapter.num, verses[0], statusEl);
   }
 };
