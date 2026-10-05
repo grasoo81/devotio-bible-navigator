@@ -49,6 +49,22 @@ module.exports = class DevotioBibleNavigatorPlugin extends Plugin {
     }
     const leaf = this.app.workspace.getLeaf(false);
     await leaf.openFile(file);
+
+    // 이 노트가 이미 열려 있던 상태였다면 Obsidian이 코드블록을 다시 그리지
+    // 않을 수 있어서, 전에 눌러서 가 있던 장/절 화면이 그대로 남아 있을 수
+    // 있습니다. 그래서 열려 있는 내비게이터를 전부 "성경" 화면(처음)으로
+    // 되돌려서, 📖를 누르면 항상 책부터 시작하게 합니다.
+    if (this.navigatorResets) {
+      this.navigatorResets = this.navigatorResets.filter((r) => r.containerEl.isConnected);
+      for (const r of this.navigatorResets) r.resetFn();
+    }
+  }
+
+  // renderNavigator/renderMobileNavigator가 자기 자신을 다시 그릴 수 있는
+  // 함수를 등록해 둡니다. openEntryNote에서 "처음부터 다시 보여주기"에 씁니다.
+  registerNavigatorReset(containerEl, resetFn) {
+    if (!this.navigatorResets) this.navigatorResets = [];
+    this.navigatorResets.push({ containerEl, resetFn });
   }
 
   // 볼트 전체에서 frontmatter type: bible-book 인 노트(각 책의 인덱스 노트)를 모읍니다.
@@ -176,6 +192,7 @@ module.exports = class DevotioBibleNavigatorPlugin extends Plugin {
   renderNavigator(containerEl) {
     containerEl.empty();
     containerEl.addClass('devotio-bible-navigator');
+    this.registerNavigatorReset(containerEl, () => this.renderNavigator(containerEl));
 
     const state = { book: null, chapter: null, verses: null };
 
@@ -292,6 +309,7 @@ module.exports = class DevotioBibleNavigatorPlugin extends Plugin {
   renderMobileNavigator(containerEl) {
     containerEl.empty();
     containerEl.addClass('devotio-bible-navigator', 'devotio-bible-navigator-mobile');
+    this.registerNavigatorReset(containerEl, () => this.renderMobileNavigator(containerEl));
 
     const screenEl = containerEl.createDiv({ cls: 'devotio-bible-screen' });
     const statusEl = containerEl.createDiv({ cls: 'devotio-bible-status' });
