@@ -1,0 +1,10 @@
+{
+  "id": "devotio-bible-navigator",
+  "name": "성경 찾아가기",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "성경 → 장(편) → 절을 선택하면 볼트의 장별 개역개정 노트에서 해당 절로 이동합니다. 본문은 바꾸지 않습니다.",
+  "author": "Jungsoo Choi",
+  "authorUrl": "https://github.com/grasoo81",
+  "isDesktopOnly": false
+}

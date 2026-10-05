@@ -1,0 +1,36 @@
+.devotio-bible-navigator {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0.5em 0;
+  padding: 0.5em;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-secondary);
+}
+
+.devotio-bible-select {
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  min-width: 120px;
+}
+
+.devotio-bible-select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.devotio-bible-status {
+  flex-basis: 100%;
+  font-size: 0.85em;
+  color: var(--text-muted);
+}
+
+.devotio-bible-ribbon-emoji {
+  font-size: 18px;
+  line-height: 1;
+}
