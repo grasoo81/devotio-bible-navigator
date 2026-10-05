@@ -186,11 +186,16 @@ module.exports = class DevotioBibleNavigatorPlugin extends Plugin {
 
   // 성경/장/절 각 단계를 테두리가 있는 박스로 감싸고, 위에 "장"·"절" 같은 라벨 배지와
   // (있으면) 책 제목을 보여줍니다. 제목을 나중에 바꿀 수 있도록 title span을 돌려줍니다.
-  createBox(parentEl, labelText) {
+  createBox(parentEl, labelText, onHome) {
     const box = parentEl.createDiv({ cls: 'devotio-bible-box' });
     const header = box.createDiv({ cls: 'devotio-bible-box-header' });
     const titleEl = header.createSpan({ cls: 'devotio-bible-box-title' });
     header.createSpan({ cls: 'devotio-bible-box-label', text: labelText });
+    const homeBtn = header.createEl('button', {
+      cls: 'devotio-bible-home-btn', text: '⌂ 책 목록',
+      attr: { type: 'button', 'aria-label': '성경 책 목록으로 돌아가기' },
+    });
+    homeBtn.addEventListener('click', onHome);
     const bodyEl = box.createDiv({ cls: 'devotio-bible-row' });
     return { box, titleEl, bodyEl };
   }
@@ -202,10 +207,11 @@ module.exports = class DevotioBibleNavigatorPlugin extends Plugin {
 
     const state = { book: null, chapter: null, verses: null };
 
-    const bookBox = this.createBox(containerEl, '성경');
-    const chapterBox = this.createBox(containerEl, '장');
+    const goHome = () => this.renderNavigator(containerEl);
+    const bookBox = this.createBox(containerEl, '성경', goHome);
+    const chapterBox = this.createBox(containerEl, '장', goHome);
     chapterBox.box.addClass('is-hidden');
-    const verseBox = this.createBox(containerEl, '절');
+    const verseBox = this.createBox(containerEl, '절', goHome);
     verseBox.box.addClass('is-hidden');
 
     const statusEl = containerEl.createDiv({ cls: 'devotio-bible-status' });
@@ -323,7 +329,7 @@ module.exports = class DevotioBibleNavigatorPlugin extends Plugin {
     this.showBookScreen(screenEl, statusEl);
   }
 
-  createScreenHeader(screenEl, title, onBack) {
+  createScreenHeader(screenEl, title, onBack, onHome) {
     const header = screenEl.createDiv({ cls: 'devotio-bible-screen-header' });
     if (onBack) {
       const backBtn = header.createEl('button', { cls: 'devotio-bible-back-btn' });
@@ -331,13 +337,18 @@ module.exports = class DevotioBibleNavigatorPlugin extends Plugin {
       backBtn.addEventListener('click', onBack.handler);
     }
     header.createSpan({ cls: 'devotio-bible-screen-title', text: title });
+    const homeBtn = header.createEl('button', {
+      cls: 'devotio-bible-home-btn', text: '⌂ 책 목록',
+      attr: { type: 'button', 'aria-label': '성경 책 목록으로 돌아가기' },
+    });
+    homeBtn.addEventListener('click', onHome);
   }
 
   showBookScreen(screenEl, statusEl) {
     screenEl.empty();
     statusEl.setText('');
 
-    this.createScreenHeader(screenEl, '성경', null);
+    this.createScreenHeader(screenEl, '성경', null, () => this.showBookScreen(screenEl, statusEl));
     const row = screenEl.createDiv({ cls: 'devotio-bible-row' });
 
     const books = this.getBookIndex();
@@ -364,7 +375,7 @@ module.exports = class DevotioBibleNavigatorPlugin extends Plugin {
     this.createScreenHeader(screenEl, book.book, {
       label: '성경',
       handler: () => this.showBookScreen(screenEl, statusEl),
-    });
+    }, () => this.showBookScreen(screenEl, statusEl));
     const row = screenEl.createDiv({ cls: 'devotio-bible-row' });
 
     const bookFile = this.app.vault.getAbstractFileByPath(book.path);
@@ -393,7 +404,7 @@ module.exports = class DevotioBibleNavigatorPlugin extends Plugin {
     this.createScreenHeader(screenEl, book.book + ' ' + chapter.num + chapter.unit, {
       label: book.book,
       handler: () => this.showChapterScreen(book, screenEl, statusEl),
-    });
+    }, () => this.showBookScreen(screenEl, statusEl));
     const row = screenEl.createDiv({ cls: 'devotio-bible-row' });
 
     const chapterFile = this.app.vault.getAbstractFileByPath(chapter.path);
