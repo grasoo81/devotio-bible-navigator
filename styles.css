@@ -120,3 +120,44 @@
   font-size: 18px;
   line-height: 1;
 }
+
+/* 모바일(아이폰·아이패드) 전용 — 책/장/절이 한 화면씩 완전히 바뀐다 */
+.devotio-bible-navigator-mobile .devotio-bible-screen-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.devotio-bible-navigator-mobile .devotio-bible-back-btn {
+  appearance: none;
+  border: none;
+  background: none;
+  color: var(--interactive-accent);
+  font-size: 0.85em;
+  font-weight: 600;
+  padding: 2px 4px;
+  cursor: pointer;
+}
+
+.devotio-bible-navigator-mobile .devotio-bible-back-btn:active {
+  opacity: 0.6;
+}
+
+.devotio-bible-navigator-mobile .devotio-bible-screen-title {
+  font-size: 0.95em;
+  font-weight: 700;
+  color: var(--text-normal);
+}
+
+/* 손가락으로 누르기 편하게 버튼을 조금 더 크게 */
+.devotio-bible-navigator-mobile .devotio-bible-btn {
+  padding: 7px 13px;
+  font-size: 0.9em;
+}
+
+.devotio-bible-navigator-mobile .devotio-bible-btn-chapter,
+.devotio-bible-navigator-mobile .devotio-bible-btn-verse {
+  padding: 6px 11px;
+  font-size: 0.85em;
+}

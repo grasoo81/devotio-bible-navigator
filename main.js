@@ -1,4 +1,4 @@
-const { Plugin, MarkdownView, Notice } = require('obsidian');
+const { Plugin, MarkdownView, Notice, Platform } = require('obsidian');
 
 // 이 플러그인이 찾아 여는 "성경 찾아가기" 노트의 경로.
 // 볼트(Devotio) 안에서 이 경로가 바뀌면 여기도 같이 고쳐야 합니다.
@@ -30,7 +30,14 @@ module.exports = class DevotioBibleNavigatorPlugin extends Plugin {
     });
 
     this.registerMarkdownCodeBlockProcessor(NAVIGATOR_BLOCK_LANG, (source, el) => {
-      this.renderNavigator(el);
+      // 아이폰·아이패드는 화면이 좁아서 성경/장/절을 한 화면에 같이 보여주지 않고,
+      // 단계마다 화면을 바꿔 가며(책 화면 → 장 화면 → 절 화면) 보여줍니다.
+      // 맥·PC는 기존처럼 박스를 세로로 쌓아서 한 화면에 같이 보여줍니다.
+      if (Platform.isMobile) {
+        this.renderMobileNavigator(el);
+      } else {
+        this.renderNavigator(el);
+      }
     });
   }
 
@@ -269,6 +276,114 @@ module.exports = class DevotioBibleNavigatorPlugin extends Plugin {
     for (const v of verses) {
       this.createChoiceButton(
         verseBox.bodyEl,
+        'devotio-bible-btn-verse',
+        String(v),
+        v + '절',
+        () => this.goToVerse(chapter.path, book.book_abbr, chapter.num, v, statusEl)
+      );
+    }
+  }
+
+  // ───────────────────────── 모바일(아이폰·아이패드) 전용 화면 ─────────────────────────
+  // 책을 고르면 장 화면으로, 장을 고르면 절 화면으로 완전히 바뀐다(한 화면에 다 안 보임).
+  // 뒤로 버튼으로 이전 화면으로 돌아간다. 실제 데이터는 위의 getBookIndex 등을
+  // 그대로 재사용하고, 여기서는 화면 전환만 다르게 만든다.
+
+  renderMobileNavigator(containerEl) {
+    containerEl.empty();
+    containerEl.addClass('devotio-bible-navigator', 'devotio-bible-navigator-mobile');
+
+    const screenEl = containerEl.createDiv({ cls: 'devotio-bible-screen' });
+    const statusEl = containerEl.createDiv({ cls: 'devotio-bible-status' });
+
+    this.showBookScreen(screenEl, statusEl);
+  }
+
+  createScreenHeader(screenEl, title, onBack) {
+    const header = screenEl.createDiv({ cls: 'devotio-bible-screen-header' });
+    if (onBack) {
+      const backBtn = header.createEl('button', { cls: 'devotio-bible-back-btn' });
+      backBtn.setText('‹ ' + onBack.label);
+      backBtn.addEventListener('click', onBack.handler);
+    }
+    header.createSpan({ cls: 'devotio-bible-screen-title', text: title });
+  }
+
+  showBookScreen(screenEl, statusEl) {
+    screenEl.empty();
+    statusEl.setText('');
+
+    this.createScreenHeader(screenEl, '성경', null);
+    const row = screenEl.createDiv({ cls: 'devotio-bible-row' });
+
+    const books = this.getBookIndex();
+    let lastTestament = null;
+    for (const b of books) {
+      if (b.testament !== lastTestament) {
+        row.createSpan({ cls: 'devotio-bible-group-label', text: b.testament });
+        lastTestament = b.testament;
+      }
+      this.createChoiceButton(
+        row,
+        'devotio-bible-btn-book',
+        b.book_abbr || b.book,
+        b.book,
+        () => this.showChapterScreen(b, screenEl, statusEl)
+      );
+    }
+  }
+
+  showChapterScreen(book, screenEl, statusEl) {
+    screenEl.empty();
+    statusEl.setText('');
+
+    this.createScreenHeader(screenEl, book.book, {
+      label: '성경',
+      handler: () => this.showBookScreen(screenEl, statusEl),
+    });
+    const row = screenEl.createDiv({ cls: 'devotio-bible-row' });
+
+    const bookFile = this.app.vault.getAbstractFileByPath(book.path);
+    const chapters = this.getChapterIndex(bookFile.parent, book.book_abbr);
+
+    if (chapters.length === 0) {
+      statusEl.setText('이 책에는 장(편) 노트가 아직 없습니다.');
+      return;
+    }
+
+    for (const c of chapters) {
+      this.createChoiceButton(
+        row,
+        'devotio-bible-btn-chapter',
+        String(c.num),
+        c.num + c.unit,
+        () => this.showVerseScreen(book, c, screenEl, statusEl)
+      );
+    }
+  }
+
+  async showVerseScreen(book, chapter, screenEl, statusEl) {
+    screenEl.empty();
+    statusEl.setText('');
+
+    this.createScreenHeader(screenEl, book.book + ' ' + chapter.num + chapter.unit, {
+      label: book.book,
+      handler: () => this.showChapterScreen(book, screenEl, statusEl),
+    });
+    const row = screenEl.createDiv({ cls: 'devotio-bible-row' });
+
+    const chapterFile = this.app.vault.getAbstractFileByPath(chapter.path);
+    const content = await this.app.vault.cachedRead(chapterFile);
+    const verses = this.extractVerseNumbers(content, book.book_abbr, chapter.num);
+
+    if (verses.length === 0) {
+      statusEl.setText('이 장(편)에는 절 링크를 찾지 못했습니다.');
+      return;
+    }
+
+    for (const v of verses) {
+      this.createChoiceButton(
+        row,
         'devotio-bible-btn-verse',
         String(v),
         v + '절',
