@@ -2,14 +2,22 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const Module = require('node:module');
 const originalLoad = Module._load;
+const platform = { isMobile: false, isDesktopApp: true };
 Module._load = function (id, ...args) {
   if (id === 'obsidian') return {
-    Plugin: class {}, MarkdownView: class {}, Notice: class {}, Platform: { isMobile: false },
+    Plugin: class {
+      addRibbonIcon() { return {empty() {}, addClass() {}, setText() {}}; }
+      addCommand(command) { this.commands.push(command); }
+      registerMarkdownCodeBlockProcessor() {}
+      registerObsidianProtocolHandler(name, handler) { this.protocol = {name, handler}; }
+      registerDomEvent(_target, name, handler) { this.domHandler = {name, handler}; }
+    }, MarkdownView: class {}, Notice: class {}, Platform: platform,
   };
   return originalLoad.call(this, id, ...args);
 };
 const Navigator = require('./main.js');
 Module._load = originalLoad;
+global.document = {};
 
 class Element {
   constructor(tag = 'div', options = {}) {
@@ -110,4 +118,87 @@ test('desktop chapter header returns to books before choosing a verse', () => {
   assert.equal(root.querySelectorAll('.devotio-bible-btn-chapter').length, 0);
   assert.equal(root.querySelectorAll('.devotio-bible-btn-book').length, 1);
   assert.equal(nav.navigatorResets.length, 1);
+});
+
+const versePath = '100. notes/170. 성경/구약/27.다니엘/단3장.md';
+const verseText = '---\ntype: bible-chapter\nbook: 다니엘\nbook_abbr: 단\nchapter: 3\n---\n**[[단3_19|19]]** text\n**[[단3_20|20]]** text\n';
+function linkFixture() {
+  const nav = new Navigator();
+  nav.commands = [];
+  const opened = [];
+  const file = {path: versePath, name: '단3장.md'};
+  nav.app = {
+    vault: {
+      getMarkdownFiles: () => [file],
+      getAbstractFileByPath: path => path === versePath ? file : null,
+      cachedRead: async () => verseText,
+      read: async () => verseText,
+    },
+    workspace: {
+      getLeaf: kind => {
+        opened.push(kind);
+        return {openFile: async () => {}, view: {editor: {getLine: () => '', setSelection() {}, scrollIntoView() {}}}};
+      },
+    },
+  };
+  return {nav, opened};
+}
+
+test('old PC shortcut command id opens the same entry note as the GitHub command', async () => {
+  const {nav, opened} = linkFixture();
+  const index = '100. notes/170. 성경/📖 성경 찾아가기.md';
+  nav.app.vault.getAbstractFileByPath = path => path === index ? {path} : null;
+  await nav.onload();
+  const original = nav.commands.find(command => command.id === 'open-bible-navigator');
+  const legacy = nav.commands.find(command => command.id === 'open');
+  assert.ok(original);
+  assert.ok(legacy, 'Alt+Shift+B still points at devotio-bible-navigator:open');
+  await legacy.callback();
+  assert.deepEqual(opened, [false]);
+});
+
+test('selected Korean verse links to a verified local chapter and opens its verse in a popout', async () => {
+  const {nav, opened} = linkFixture();
+  await nav.onload();
+  const command = nav.commands.find(command => command.id === 'link-selected-verse');
+  assert.ok(command, 'PC selected-reference command remains available');
+  let replacement;
+  await command.editorCallback({getSelection: () => '단 3:19-20', replaceSelection: text => replacement = text});
+  assert.match(replacement, /^\[단 3:19-20\]\(obsidian:\/\/devotio-bible\?/);
+  const url = new URL(replacement.match(/\((obsidian:\/\/[^)]+)\)/)[1]);
+  assert.equal(url.searchParams.get('file'), versePath);
+  assert.equal(url.searchParams.get('verse'), '19');
+  await nav.protocol.handler(Object.fromEntries(url.searchParams));
+  assert.deepEqual(opened, ['window']);
+});
+
+test('vault click on a verse link opens once in the desktop popout', async () => {
+  const {nav, opened} = linkFixture();
+  await nav.onload();
+  let prevented = 0;
+  await nav.domHandler.handler({
+    target: {closest: () => ({href: 'obsidian://devotio-bible?file=' + encodeURIComponent(versePath) + '&verse=20'})},
+    preventDefault: () => prevented++, stopPropagation: () => {},
+  });
+  assert.equal(prevented, 1);
+  assert.deepEqual(opened, ['window']);
+});
+
+test('an invalid path or non-existent verse cannot open a chapter', async () => {
+  const {nav, opened} = linkFixture();
+  await nav.onload();
+  await nav.protocol.handler({file: '../private.md', verse: '19'});
+  await nav.protocol.handler({file: versePath, verse: '99'});
+  await nav.protocol.handler({file: versePath, verse: '19x'});
+  assert.deepEqual(opened, []);
+});
+
+test('the same verified verse link opens in the current leaf on a mobile device', async () => {
+  const {nav, opened} = linkFixture();
+  await nav.onload();
+  platform.isDesktopApp = false;
+  try {
+    await nav.protocol.handler({file: versePath, verse: '19'});
+    assert.deepEqual(opened, [false]);
+  } finally { platform.isDesktopApp = true; }
 });

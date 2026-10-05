@@ -6,9 +6,26 @@ const ENTRY_NOTE_PATH = '100. notes/170. 성경/📖 성경 찾아가기.md';
 
 // 노트 안의 ```devotio-bible-navigator 코드블록을 찾아 UI로 바꿔 줍니다.
 const NAVIGATOR_BLOCK_LANG = 'devotio-bible-navigator';
+const ROOT = '100. notes/170. 성경/';
 
 function escapeRegExp(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Read only chapter metadata and verse positions from a local Bible note.
+function parseChapter(path, text) {
+  if (!path.startsWith(ROOT)) return null;
+  const fm = text.match(/^---\x0d?\n([\s\S]*?)\x0d?\n---/);
+  if (!fm || !/^type: bible-chapter\s*$/m.test(fm[1])) return null;
+  const value = key => (fm[1].match(new RegExp('^' + key + ':\\s*(.+)$', 'm')) || [])[1]?.trim().replace(/^["']|["']$/g, '');
+  const book = value('book'), abbr = value('book_abbr'), chapter = Number(value('chapter'));
+  if (!book || !abbr || !Number.isInteger(chapter) || chapter < 1) return null;
+  const verses = [];
+  text.split(/\x0d?\n/).forEach((line, index) => {
+    const m = line.match(/^\*\*\[\[([^|]+)\|(\d+)\]\]\*\*/);
+    if (m && m[1] === abbr + chapter + '_' + m[2]) verses.push({ number: Number(m[2]), line: index });
+  });
+  return { path, book, abbr, chapter, verses };
 }
 
 module.exports = class DevotioBibleNavigatorPlugin extends Plugin {
@@ -29,6 +46,58 @@ module.exports = class DevotioBibleNavigatorPlugin extends Plugin {
       callback: () => this.openEntryNote(),
     });
 
+    // Keep the PC's existing Alt+Shift+B shortcut registered to :open.
+    this.addCommand({ id: 'open', name: '성경 찾아가기', callback: () => this.openEntryNote() });
+    this.registerObsidianProtocolHandler('devotio-bible', params => this.handleVerseLink(params));
+    this.registerDomEvent(document, 'click', async event => {
+      const clicked = event.target?.closest?.('a[href], .cm-link');
+      if (!clicked) return;
+      let href = clicked.href;
+      if (!href && clicked.classList?.contains('cm-link')) {
+        const line = clicked.closest('.cm-line');
+        const leaf = this.app.workspace.getLeavesOfType('markdown').find(l => l.view.containerEl.contains(clicked));
+        const cm = leaf?.view.editor?.cm;
+        if (!line || !cm) return;
+        const lineNumber = cm.state.doc.lineAt(cm.posAtDOM(line)).number;
+        const source = leaf.view.editor.getLine(lineNumber - 1);
+        const matches = Array.from(source.matchAll(/\[([^\]]+)\]\((obsidian:\/\/devotio-bible\?[^)\s]+)\)/g))
+          .filter(m => m[1] === clicked.textContent);
+        if (matches.length !== 1) return;
+        href = matches[0][2];
+      }
+      let url;
+      try { url = new URL(href); } catch { return; }
+      if (url.protocol !== 'obsidian:' || url.hostname !== 'devotio-bible') return;
+      event.preventDefault();
+      event.stopPropagation();
+      await this.handleVerseLink(Object.fromEntries(url.searchParams));
+    }, true);
+    this.addCommand({
+      id: 'link-selected-verse', name: '선택한 성경 구절을 새 창 링크로 만들기',
+      editorCallback: async editor => {
+        const label = editor.getSelection();
+        const match = label.trim().match(/^([가-힣0-9]+)\s*(\d+)(?:장|\s*:\s*(\d+)(?:\s*[-–~]\s*(\d+))?)?$/);
+        if (!match || (match[4] && Number(match[4]) < Number(match[3]))) {
+          new Notice('렘 3장, 단 3:19 또는 단 3:19-20처럼 선택해 주세요.'); return;
+        }
+        const [, book, chapterNumber, selectedVerse, endVerse] = match;
+        const verseText = selectedVerse || '1';
+        const files = this.app.vault.getMarkdownFiles().filter(f => f.path.startsWith(ROOT) &&
+          (f.name === `${book}${chapterNumber}장.md` ||
+           (f.name.endsWith(`${chapterNumber}장.md`) && f.path.includes(`.${book}/`))));
+        const chapters = [];
+        for (const file of files) {
+          const chapter = parseChapter(file.path, await this.app.vault.cachedRead(file));
+          if (chapter && chapter.chapter === Number(chapterNumber) &&
+              (chapter.abbr === book || chapter.book === book) &&
+              chapter.verses.some(v => v.number === Number(verseText)) &&
+              (!endVerse || chapter.verses.some(v => v.number === Number(endVerse)))) chapters.push(chapter);
+        }
+        if (chapters.length !== 1) { new Notice('해당 구절을 하나의 장별 노트에서 확인하지 못했습니다.'); return; }
+        const query = new URLSearchParams({ vault: 'Devotio', file: chapters[0].path, verse: String(Number(verseText)) });
+        editor.replaceSelection(`[${label}](obsidian://devotio-bible?${query})`);
+      },
+    });
     this.registerMarkdownCodeBlockProcessor(NAVIGATOR_BLOCK_LANG, (source, el) => {
       // 아이폰·아이패드는 화면이 좁아서 성경/장/절을 한 화면에 같이 보여주지 않고,
       // 단계마다 화면을 바꿔 가며(책 화면 → 장 화면 → 절 화면) 보여줍니다.
@@ -41,13 +110,45 @@ module.exports = class DevotioBibleNavigatorPlugin extends Plugin {
     });
   }
 
+  async handleVerseLink(params) {
+    if (!params.file?.startsWith(ROOT) || !/^\d+$/.test(params.verse || '')) return;
+    const file = this.app.vault.getAbstractFileByPath(params.file);
+    if (!file || file.path !== params.file) return;
+    const chapter = parseChapter(file.path, await this.app.vault.read(file));
+    const verse = Number(params.verse);
+    if (chapter?.verses.some(v => v.number === verse)) await this.openChapter(chapter, verse, true);
+  }
+
+  async openChapter(chapter, verseNumber, popout = false) {
+    try {
+      const file = this.app.vault.getAbstractFileByPath(chapter.path);
+      if (!file) throw new Error('Missing chapter');
+      const fresh = parseChapter(file.path, await this.app.vault.read(file));
+      const verse = verseNumber === undefined ? null : fresh?.verses.find(v => v.number === verseNumber);
+      if (!fresh || (verseNumber !== undefined && !verse)) {
+        new Notice('선택한 절을 찾지 못했습니다.'); return;
+      }
+      const leaf = this.app.workspace.getLeaf(popout && Platform.isDesktopApp ? 'window' : false);
+      await leaf.openFile(file, { state: { mode: 'source', source: false }, eState: { line: verse?.line || 0 } });
+      const view = leaf.view;
+      if (view instanceof MarkdownView && verse && view.editor) {
+        const start = { line: verse.line, ch: 0 };
+        const end = { line: verse.line, ch: view.editor.getLine(verse.line).length };
+        view.editor.setSelection(start, end);
+        view.editor.scrollIntoView({ from: start, to: end }, true);
+      }
+    } catch (error) { new Notice('성경 노트를 열지 못했습니다.'); console.error(error); }
+  }
+
   async openEntryNote() {
     const file = this.app.vault.getAbstractFileByPath(ENTRY_NOTE_PATH);
     if (!file) {
       new Notice('성경 찾아가기 노트를 찾을 수 없습니다: ' + ENTRY_NOTE_PATH);
       return;
     }
-    const leaf = this.app.workspace.getLeaf(false);
+    const existing = this.app.workspace.getLeavesOfType?.('markdown')?.find(l => l.view?.file?.path === file.path);
+    const leaf = existing || this.app.workspace.getLeaf(false);
+    if (existing) this.app.workspace.setActiveLeaf?.(existing, true, true);
     await leaf.openFile(file);
 
     // 이 노트가 이미 열려 있던 상태였다면 Obsidian이 코드블록을 다시 그리지
