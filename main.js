@@ -56,14 +56,20 @@ module.exports = class DevotioBibleNavigatorPlugin extends Plugin {
     // 되돌려서, 📖를 누르면 항상 책부터 시작하게 합니다.
     if (this.navigatorResets) {
       this.navigatorResets = this.navigatorResets.filter((r) => r.containerEl.isConnected);
-      for (const r of this.navigatorResets) r.resetFn();
+      // resetFn()이 renderNavigator를 다시 불러서 registerNavigatorReset을
+      // 또 호출하므로, 지금 돌고 있는 배열 자체가 아니라 복사본(slice)을
+      // 돌아야 합니다. 그렇지 않으면 도는 동안 계속 길어져서 끝나지 않는
+      // 반복이 됩니다(실제로 이 버그 때문에 앱이 멈췄습니다).
+      for (const r of this.navigatorResets.slice()) r.resetFn();
     }
   }
 
   // renderNavigator/renderMobileNavigator가 자기 자신을 다시 그릴 수 있는
   // 함수를 등록해 둡니다. openEntryNote에서 "처음부터 다시 보여주기"에 씁니다.
+  // 같은 containerEl에 대해서는 새 걸로 교체만 하고, 쌓아 두지 않습니다.
   registerNavigatorReset(containerEl, resetFn) {
     if (!this.navigatorResets) this.navigatorResets = [];
+    this.navigatorResets = this.navigatorResets.filter((r) => r.containerEl !== containerEl);
     this.navigatorResets.push({ containerEl, resetFn });
   }
 
