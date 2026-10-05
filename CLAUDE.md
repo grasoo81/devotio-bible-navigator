@@ -92,3 +92,23 @@ TypeScript + esbuild 같은 빌드 체인을 쓰지 않고 순수 JavaScript
 화면으로 돌아감 (`createScreenHeader`의 `onBack`).
 고칠 때 이 두 경로의 차이를 지킬 것 — 한쪽만 고치고 다른 쪽을 빠뜨리기
 쉬움.
+
+## 📖를 다시 누르면 항상 "성경" 화면부터 시작 (`openEntryNote` + `navigatorResets`)
+
+노트가 이미 열려 있으면 Obsidian이 코드블록을 다시 그리지 않을 수 있어서,
+`openEntryNote`가 열려 있는 내비게이터들을 찾아 처음 화면으로 되돌림.
+`render*Navigator`가 자기 자신을 다시 그리는 함수를 `navigatorResets`
+배열에 등록해 두고, `openEntryNote`가 그걸 꺼내서 실행함.
+
+**주의 — v0.2.1에서 이 기능을 넣으면서 무한 루프 버그를 냈다가 v0.2.2에서
+고침(아이폰에서 freeze 발생):** `resetFn()`이 `render*Navigator`를
+다시 부르고, 그게 또 `registerNavigatorReset`을 불러서 **같은 배열에
+새 항목을 더 넣는다.** 이걸 `for (const r of this.navigatorResets)`로
+그 배열 자체를 직접 돌면, 도는 동안 배열이 계속 늘어나서 끝나지 않는다.
+그래서 반드시:
+1. 순회할 때는 `.slice()`로 복사본을 돌 것 (`this.navigatorResets.slice()`).
+2. `registerNavigatorReset`은 같은 `containerEl`이면 교체만 하고 쌓지
+   않을 것 (`filter`로 기존 항목 제거 후 `push`).
+이 두 가지를 모두 지켜야 함 — 하나만 지키면 다시 재현될 수 있음.
+비슷하게 "콜백이 자기 자신을 다시 등록하는" 배열을 건드릴 때는 항상
+이 패턴(복사본 순회 + 중복 교체)을 쓸 것.
