@@ -21,6 +21,14 @@ module.exports = class DevotioBibleNavigatorPlugin extends Plugin {
     ribbonEl.addClass('devotio-bible-ribbon-emoji');
     ribbonEl.setText('📖');
 
+    // 리본 아이콘이 안 보이는 기기/설정(예: Focus Mode 켜짐)에서도 쓸 수 있도록
+    // 명령 팔레트(검색)에서도 찾을 수 있게 등록합니다.
+    this.addCommand({
+      id: 'open-bible-navigator',
+      name: '성경 찾아가기 열기',
+      callback: () => this.openEntryNote(),
+    });
+
     this.registerMarkdownCodeBlockProcessor(NAVIGATOR_BLOCK_LANG, (source, el) => {
       this.renderNavigator(el);
     });
