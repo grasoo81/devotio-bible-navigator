@@ -9,6 +9,44 @@
   background: var(--background-secondary);
 }
 
+.devotio-bible-box {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-primary);
+  padding: 6px 8px;
+}
+
+.devotio-bible-box.is-hidden {
+  display: none;
+}
+
+.devotio-bible-box-header {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.devotio-bible-box-title {
+  font-size: 0.85em;
+  font-weight: 600;
+  color: var(--text-normal);
+}
+
+.devotio-bible-box-title:empty {
+  display: none;
+}
+
+.devotio-bible-box-label {
+  font-size: 0.68em;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--background-modifier-border);
+  border-radius: 999px;
+  padding: 1px 7px;
+  letter-spacing: 0.02em;
+}
+
 .devotio-bible-row {
   display: flex;
   flex-wrap: wrap;

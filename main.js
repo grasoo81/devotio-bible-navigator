@@ -147,40 +147,59 @@ module.exports = class DevotioBibleNavigatorPlugin extends Plugin {
     return btn;
   }
 
+  // 성경/장/절 각 단계를 테두리가 있는 박스로 감싸고, 위에 "장"·"절" 같은 라벨 배지와
+  // (있으면) 책 제목을 보여줍니다. 제목을 나중에 바꿀 수 있도록 title span을 돌려줍니다.
+  createBox(parentEl, labelText) {
+    const box = parentEl.createDiv({ cls: 'devotio-bible-box' });
+    const header = box.createDiv({ cls: 'devotio-bible-box-header' });
+    const titleEl = header.createSpan({ cls: 'devotio-bible-box-title' });
+    header.createSpan({ cls: 'devotio-bible-box-label', text: labelText });
+    const bodyEl = box.createDiv({ cls: 'devotio-bible-row' });
+    return { box, titleEl, bodyEl };
+  }
+
   renderNavigator(containerEl) {
     containerEl.empty();
     containerEl.addClass('devotio-bible-navigator');
 
-    const state = { book: null };
+    const state = { book: null, chapter: null, verses: null };
 
-    const bookRow = containerEl.createDiv({ cls: 'devotio-bible-row' });
-    const chapterRow = containerEl.createDiv({ cls: 'devotio-bible-row is-hidden' });
-    const verseRow = containerEl.createDiv({ cls: 'devotio-bible-row is-hidden' });
+    const bookBox = this.createBox(containerEl, '성경');
+    const chapterBox = this.createBox(containerEl, '장');
+    chapterBox.box.addClass('is-hidden');
+    const verseBox = this.createBox(containerEl, '절');
+    verseBox.box.addClass('is-hidden');
+
     const statusEl = containerEl.createDiv({ cls: 'devotio-bible-status' });
 
     const books = this.getBookIndex();
     let lastTestament = null;
     for (const b of books) {
       if (b.testament !== lastTestament) {
-        bookRow.createSpan({ cls: 'devotio-bible-group-label', text: b.testament });
+        bookBox.bodyEl.createSpan({ cls: 'devotio-bible-group-label', text: b.testament });
         lastTestament = b.testament;
       }
       this.createChoiceButton(
-        bookRow,
+        bookBox.bodyEl,
         'devotio-bible-btn-book',
         b.book_abbr || b.book,
         b.book,
-        () => this.showChapters(b, chapterRow, verseRow, statusEl, state)
+        () => this.showChapters(b, chapterBox, verseBox, statusEl, state)
       );
     }
   }
 
-  showChapters(book, chapterRow, verseRow, statusEl, state) {
+  showChapters(book, chapterBox, verseBox, statusEl, state) {
     state.book = book;
-    chapterRow.empty();
-    chapterRow.removeClass('is-hidden');
-    verseRow.empty();
-    verseRow.addClass('is-hidden');
+    state.chapter = null;
+    state.verses = null;
+
+    chapterBox.box.removeClass('is-hidden');
+    chapterBox.titleEl.setText(book.book);
+    chapterBox.bodyEl.empty();
+
+    verseBox.box.addClass('is-hidden');
+    verseBox.bodyEl.empty();
     statusEl.setText('');
 
     const bookFile = this.app.vault.getAbstractFileByPath(book.path);
@@ -193,45 +212,60 @@ module.exports = class DevotioBibleNavigatorPlugin extends Plugin {
 
     for (const c of chapters) {
       this.createChoiceButton(
-        chapterRow,
+        chapterBox.bodyEl,
         'devotio-bible-btn-chapter',
         String(c.num),
         c.num + c.unit,
-        () => this.showVerses(book, c, verseRow, statusEl)
+        async () => {
+          const alreadySelected = state.chapter && state.chapter.path === c.path;
+          if (alreadySelected) {
+            // 같은 장을 다시 누르면 그 장으로 바로 이동합니다(첫 절로).
+            if (state.verses && state.verses.length > 0) {
+              await this.goToVerse(c.path, book.book_abbr, c.num, state.verses[0], statusEl);
+              const firstVerseBtn = verseBox.bodyEl.querySelector('.devotio-bible-btn-verse');
+              if (firstVerseBtn) {
+                verseBox.bodyEl.querySelectorAll('button').forEach((el) => el.removeClass('is-selected'));
+                firstVerseBtn.addClass('is-selected');
+              }
+            }
+            return;
+          }
+          // 처음 누르면 이동하지 않고, 절을 고를 수 있게 절 박스만 엽니다.
+          await this.showVerses(book, c, verseBox, statusEl, state);
+        }
       );
     }
   }
 
-  // 장(편)을 누르면 절 버튼들을 보여주면서, 동시에 그 장의 첫 절로 바로 이동합니다
-  // ("3장을 펴면 3장 1절로 이동").
-  async showVerses(book, chapter, verseRow, statusEl) {
-    verseRow.empty();
-    verseRow.removeClass('is-hidden');
+  // 장(편)을 처음 누르면 이동하지 않고, 그 장의 절 버튼들만 보여줍니다.
+  // 절 박스 제목에 책 이름 + 장(편)을 함께 보여 줍니다.
+  async showVerses(book, chapter, verseBox, statusEl, state) {
+    state.chapter = chapter;
+    state.verses = null;
+
+    verseBox.box.removeClass('is-hidden');
+    verseBox.titleEl.setText(book.book + ' ' + chapter.num + chapter.unit);
+    verseBox.bodyEl.empty();
     statusEl.setText('');
 
     const chapterFile = this.app.vault.getAbstractFileByPath(chapter.path);
     const content = await this.app.vault.cachedRead(chapterFile);
     const verses = this.extractVerseNumbers(content, book.book_abbr, chapter.num);
+    state.verses = verses;
 
     if (verses.length === 0) {
       statusEl.setText('이 장(편)에는 절 링크를 찾지 못했습니다.');
       return;
     }
 
-    let firstBtn = null;
     for (const v of verses) {
-      const btn = this.createChoiceButton(
-        verseRow,
+      this.createChoiceButton(
+        verseBox.bodyEl,
         'devotio-bible-btn-verse',
         String(v),
         v + '절',
         () => this.goToVerse(chapter.path, book.book_abbr, chapter.num, v, statusEl)
       );
-      if (v === verses[0]) firstBtn = btn;
     }
-
-    // 장을 막 열었을 때는 첫 절로 바로 이동하고, 그 버튼에 선택 표시를 해 둡니다.
-    if (firstBtn) firstBtn.addClass('is-selected');
-    await this.goToVerse(chapter.path, book.book_abbr, chapter.num, verses[0], statusEl);
   }
 };
