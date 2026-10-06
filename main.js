@@ -1,4 +1,4 @@
-const { Plugin, MarkdownView, Notice, Platform } = require('obsidian');
+const { Plugin, ItemView, MarkdownView, Notice, Platform } = require('obsidian');
 
 // 이 플러그인이 찾아 여는 "성경 찾아가기" 노트의 경로.
 // 볼트(Devotio) 안에서 이 경로가 바뀌면 여기도 같이 고쳐야 합니다.
@@ -7,6 +7,7 @@ const ENTRY_NOTE_PATH = '100. notes/170. 성경/📖 성경 찾아가기.md';
 // 노트 안의 ```devotio-bible-navigator 코드블록을 찾아 UI로 바꿔 줍니다.
 const NAVIGATOR_BLOCK_LANG = 'devotio-bible-navigator';
 const ROOT = '100. notes/170. 성경/';
+const SIDEBAR_VIEW_TYPE = 'devotio-bible-navigator-sidebar';
 
 function escapeRegExp(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -26,6 +27,17 @@ function parseChapter(path, text) {
     if (m && m[1] === abbr + chapter + '_' + m[2]) verses.push({ number: Number(m[2]), line: index });
   });
   return { path, book, abbr, chapter, verses };
+}
+
+class BibleSidebarView extends ItemView {
+  constructor(leaf, plugin) {
+    super(leaf);
+    this.plugin = plugin;
+  }
+  getViewType() { return SIDEBAR_VIEW_TYPE; }
+  getDisplayText() { return '성경 찾아가기'; }
+  getIcon() { return 'book-open'; }
+  async onOpen() { this.plugin.renderMobileNavigator(this.contentEl); }
 }
 
 module.exports = class DevotioBibleNavigatorPlugin extends Plugin {
@@ -108,6 +120,17 @@ module.exports = class DevotioBibleNavigatorPlugin extends Plugin {
         this.renderNavigator(el);
       }
     });
+    this.registerView(SIDEBAR_VIEW_TYPE, leaf => new BibleSidebarView(leaf, this));
+    if (Platform.isMobile) {
+      this.app.workspace.onLayoutReady(() => this.ensureMobileSidebarView());
+    }
+  }
+
+  async ensureMobileSidebarView() {
+    const workspace = this.app.workspace;
+    if (workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE).length) return;
+    const leaf = workspace.getLeftLeaf(false);
+    if (leaf) await leaf.setViewState({ type: SIDEBAR_VIEW_TYPE, active: false });
   }
 
   async handleVerseLink(params) {

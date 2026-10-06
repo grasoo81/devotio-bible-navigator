@@ -9,9 +9,11 @@ Module._load = function (id, ...args) {
       addRibbonIcon() { return {empty() {}, addClass() {}, setText() {}}; }
       addCommand(command) { this.commands.push(command); }
       registerMarkdownCodeBlockProcessor() {}
+      registerView(type, factory) { this.viewRegistration = {type, factory}; }
       registerObsidianProtocolHandler(name, handler) { this.protocol = {name, handler}; }
       registerDomEvent(_target, name, handler) { this.domHandler = {name, handler}; }
-    }, MarkdownView: class {}, Notice: class {}, Platform: platform,
+    }, ItemView: class { constructor(leaf) { this.leaf = leaf; this.contentEl = leaf.contentEl; } },
+    MarkdownView: class {}, Notice: class {}, Platform: platform,
   };
   return originalLoad.call(this, id, ...args);
 };
@@ -201,4 +203,37 @@ test('the same verified verse link opens in the current leaf on a mobile device'
     await nav.protocol.handler({file: versePath, verse: '19'});
     assert.deepEqual(opened, [false]);
   } finally { platform.isDesktopApp = true; }
+});
+
+test('iPhone startup adds one Bible tab to the left sidebar without replacing existing tabs', async () => {
+  platform.isMobile = true;
+  try {
+    const nav = new Navigator();
+    nav.commands = [];
+    nav.getBookIndex = () => [{book: '창세기', book_abbr: '창', testament: '구약', path: 'book.md'}];
+    let ready, splitArg, calls = 0;
+    const leaves = [];
+    const leaf = {contentEl: new Element(), setViewState: async state => {
+      const view = nav.viewRegistration.factory(leaf);
+      leaf.view = view;
+      leaves.push(leaf);
+      await view.onOpen();
+      assert.equal(state.type, nav.viewRegistration.type);
+    }};
+    nav.app = {workspace: {
+      onLayoutReady: callback => {ready = callback;},
+      getLeavesOfType: type => type === nav.viewRegistration.type ? leaves : [],
+      getLeftLeaf: split => {splitArg = split; calls++; return leaf;},
+    }};
+    await nav.onload();
+    assert.equal(typeof ready, 'function');
+    await ready();
+    assert.equal(splitArg, false);
+    assert.equal(calls, 1);
+    assert.equal(leaf.view.getIcon(), 'book-open');
+    assert.equal(leaf.view.getDisplayText(), '성경 찾아가기');
+    assert.equal(leaf.contentEl.querySelectorAll('.devotio-bible-btn-book').length, 1);
+    await ready();
+    assert.equal(calls, 1, 'restart/layout callback should not duplicate sidebar tabs');
+  } finally { platform.isMobile = false; }
 });
