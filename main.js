@@ -1,4 +1,4 @@
-const { Plugin, ItemView, MarkdownView, Notice, Platform } = require('obsidian');
+const { Plugin, ItemView, MarkdownView, Notice, Platform, addIcon } = require('obsidian');
 
 // 이 플러그인이 찾아 여는 "성경 찾아가기" 노트의 경로.
 // 볼트(Devotio) 안에서 이 경로가 바뀌면 여기도 같이 고쳐야 합니다.
@@ -8,6 +8,11 @@ const ENTRY_NOTE_PATH = '100. notes/170. 성경/📖 성경 찾아가기.md';
 const NAVIGATOR_BLOCK_LANG = 'devotio-bible-navigator';
 const ROOT = '100. notes/170. 성경/';
 const SIDEBAR_VIEW_TYPE = 'devotio-bible-navigator-sidebar';
+const BIBLE_ICON = 'devotio-bible-cross';
+const BIBLE_ICON_SVG = '<rect x="8" y="11" width="84" height="78" rx="6" fill="none" stroke="currentColor" stroke-width="7"/>' +
+  '<path d="M50 14v72 M16 29c12-4 24-2 34 3 10-5 22-7 34-3" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>' +
+  '<line x1="67" y1="40" x2="67" y2="70" stroke="currentColor" stroke-width="7" stroke-linecap="round"/>' +
+  '<line x1="56" y1="55" x2="78" y2="55" stroke="currentColor" stroke-width="7" stroke-linecap="round"/>';
 
 function escapeRegExp(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -36,19 +41,17 @@ class BibleSidebarView extends ItemView {
   }
   getViewType() { return SIDEBAR_VIEW_TYPE; }
   getDisplayText() { return '성경 찾아가기'; }
-  getIcon() { return 'book-open'; }
+  getIcon() { return BIBLE_ICON; }
   async onOpen() { this.plugin.renderMobileNavigator(this.contentEl); }
 }
 
 module.exports = class DevotioBibleNavigatorPlugin extends Plugin {
   async onload() {
-    // 왼쪽 리본에 📖 아이콘. 누르면 "성경 찾아가기" 노트를 엽니다.
-    const ribbonEl = this.addRibbonIcon('book-open', '성경 찾아가기', () => {
+    // Shared Bible icon for desktop ribbon and mobile left-sidebar tab.
+    addIcon(BIBLE_ICON, BIBLE_ICON_SVG);
+    this.addRibbonIcon(BIBLE_ICON, '성경 찾아가기', () => {
       this.openEntryNote();
     });
-    ribbonEl.empty();
-    ribbonEl.addClass('devotio-bible-ribbon-emoji');
-    ribbonEl.setText('📖');
 
     // 리본 아이콘이 안 보이는 기기/설정(예: Focus Mode 켜짐)에서도 쓸 수 있도록
     // 명령 팔레트(검색)에서도 찾을 수 있게 등록합니다.

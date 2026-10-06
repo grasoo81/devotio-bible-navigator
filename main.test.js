@@ -3,10 +3,11 @@ const assert = require('node:assert/strict');
 const Module = require('node:module');
 const originalLoad = Module._load;
 const platform = { isMobile: false, isDesktopApp: true };
+const registeredIcons = new Map();
 Module._load = function (id, ...args) {
   if (id === 'obsidian') return {
     Plugin: class {
-      addRibbonIcon() { return {empty() {}, addClass() {}, setText() {}}; }
+      addRibbonIcon(icon, title) { this.ribbon = {icon, title}; return {empty: () => this.ribbon.cleared = true, addClass() {}, setText: text => this.ribbon.text = text}; }
       addCommand(command) { this.commands.push(command); }
       registerMarkdownCodeBlockProcessor() {}
       registerView(type, factory) { this.viewRegistration = {type, factory}; }
@@ -14,6 +15,7 @@ Module._load = function (id, ...args) {
       registerDomEvent(_target, name, handler) { this.domHandler = {name, handler}; }
     }, ItemView: class { constructor(leaf) { this.leaf = leaf; this.contentEl = leaf.contentEl; } },
     MarkdownView: class {}, Notice: class {}, Platform: platform,
+    addIcon: (name, svg) => registeredIcons.set(name, svg),
   };
   return originalLoad.call(this, id, ...args);
 };
@@ -230,10 +232,25 @@ test('iPhone startup adds one Bible tab to the left sidebar without replacing ex
     await ready();
     assert.equal(splitArg, false);
     assert.equal(calls, 1);
-    assert.equal(leaf.view.getIcon(), 'book-open');
+    assert.equal(leaf.view.getIcon(), 'devotio-bible-cross');
     assert.equal(leaf.view.getDisplayText(), '성경 찾아가기');
     assert.equal(leaf.contentEl.querySelectorAll('.devotio-bible-btn-book').length, 1);
     await ready();
     assert.equal(calls, 1, 'restart/layout callback should not duplicate sidebar tabs');
   } finally { platform.isMobile = false; }
+});
+
+test('Bible ribbon and sidebar tab share a recognizable book-and-cross icon', async () => {
+  platform.isMobile = false;
+  const {nav} = linkFixture();
+  await nav.onload();
+  assert.equal(nav.ribbon.icon, 'devotio-bible-cross');
+  assert.equal(nav.ribbon.title, '성경 찾아가기');
+  assert.equal(nav.ribbon.cleared, undefined, 'custom SVG is not replaced by emoji');
+  const svg = registeredIcons.get('devotio-bible-cross');
+  assert.match(svg, /<rect\b/);
+  assert.match(svg, /<path\b/);
+  assert.match(svg, /<line\b/);
+  const view = nav.viewRegistration.factory({contentEl: new Element()});
+  assert.equal(view.getIcon(), nav.ribbon.icon);
 });
